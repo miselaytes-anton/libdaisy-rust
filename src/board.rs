@@ -1,4 +1,7 @@
-use stm32h7xx_hal::{gpio::{gpiod, Analog}, hal::digital::v2::InputPin};
+use stm32h7xx_hal::{
+    gpio::{gpiod, Analog},
+    hal::digital::v2::InputPin,
+};
 
 pub enum BoardVersion {
     /** Daisy Seed Rev4
