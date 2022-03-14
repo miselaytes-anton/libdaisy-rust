@@ -170,7 +170,7 @@ fn setup_sai(
                  * 2. Wait until the FIFO threshold (FLH) flag is different from 0b000 (FIFO empty).
                  * 3. Enable the audio block in slave transmitter mode.
                  */
-                sai1_rb.chb.dr.modify(|_, w| unsafe { w.bits(0b1) });
+                //sai1_rb.chb.dr.modify(|_, w| unsafe { w.bits(0b1) });
                 info!("Sai1 fifo waiting to receive data.");
                 while sai1_rb.chb.sr.read().flvl().is_empty() {}
                 info!("Audio started!");
@@ -226,7 +226,7 @@ fn setup_dma(
      * Dma1 stream 0, transmits audio data from tx_buffer in memory
      * to codec.
      */
-    let tx_buffer: &'static mut [u32; DMA_BUFFER_SIZE] = unsafe { &mut TX_BUFFER };
+    let rx_buffer: &'static mut [u32; DMA_BUFFER_SIZE] = unsafe { &mut RX_BUFFER };
     let dma_config = dma::dma::DmaConfig::default()
         .priority(dma::config::Priority::High)
         .memory_increment(true)
@@ -236,7 +236,7 @@ fn setup_dma(
     let output_stream: DmaOutputStream = dma::Transfer::init(
         dma1_streams.0,
         unsafe { pac::Peripherals::steal().SAI1 },
-        tx_buffer,
+        rx_buffer,
         None,
         dma_config,
     );
@@ -245,7 +245,7 @@ fn setup_dma(
      * Dma1 stream 1, receives audio data from codec
      * and puts it to rx_buffer in memory.
      */
-    let rx_buffer: &'static mut [u32; DMA_BUFFER_SIZE] = unsafe { &mut RX_BUFFER };
+    let tx_buffer: &'static mut [u32; DMA_BUFFER_SIZE] = unsafe { &mut TX_BUFFER };
     let dma_config = dma_config
         .transfer_complete_interrupt(true)
         .half_transfer_interrupt(true);
@@ -253,10 +253,20 @@ fn setup_dma(
     let input_stream: DmaInputStream = dma::Transfer::init(
         dma1_streams.1,
         unsafe { pac::Peripherals::steal().SAI1 },
-        rx_buffer,
+        tx_buffer,
         None,
         dma_config,
     );
+
+    // manually configure Channel B as transmit stream
+    let dma1_reg = unsafe { pac::Peripherals::steal().DMA1 };
+    dma1_reg.st[0]
+        .cr
+        .modify(|_, w| w.dir().peripheral_to_memory());
+    // manually configure Channel A as receive stream
+    dma1_reg.st[1]
+        .cr
+        .modify(|_, w| w.dir().memory_to_peripheral());
 
     (input_stream, output_stream)
 }
@@ -319,10 +329,11 @@ impl Audio {
         mpu: &mut cortex_m::peripheral::MPU,
         scb: &mut cortex_m::peripheral::SCB,
     ) -> Self {
+        let board_version = check_board_version(pd3);
+        setup_audio_codec(&board_version, i2c2_p, ph4, pb11, clocks);
+
         let (mut input_stream, mut output_stream): (DmaInputStream, DmaOutputStream) =
             setup_dma(dma1_d, dma1_p, mpu, scb);
-
-        let board_version = check_board_version(pd3);
 
         let sai: Sai<SAI1, I2S> = setup_sai(
             &board_version,
@@ -338,16 +349,12 @@ impl Audio {
             &mut output_stream,
         );
 
-        setup_audio_codec(&board_version, i2c2_p, ph4, pb11, clocks);
-
-        let output = Output::new(unsafe { &mut TX_BUFFER });
         let input = Input::new(unsafe { &mut RX_BUFFER });
-
+        let output = Output::new(unsafe { &mut TX_BUFFER });
         info!(
             "{:?}, {:?}",
             &input.buffer[0] as *const u32, &output.buffer[0] as *const u32
         );
-
         Audio {
             sai,
             input_stream,
