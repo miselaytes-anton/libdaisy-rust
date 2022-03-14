@@ -164,13 +164,6 @@ fn setup_sai(
 
             output_stream.start(|sai1_rb| {
                 sai.enable_dma(SaiChannel::ChannelB);
-                /*
-                 * In Slave TX mode:
-                 * 1. Write into the SAI_xDR (by software or by DMA).
-                 * 2. Wait until the FIFO threshold (FLH) flag is different from 0b000 (FIFO empty).
-                 * 3. Enable the audio block in slave transmitter mode.
-                 */
-                //sai1_rb.chb.dr.modify(|_, w| unsafe { w.bits(0b1) });
                 info!("Sai1 fifo waiting to receive data.");
                 while sai1_rb.chb.sr.read().flvl().is_empty() {}
                 info!("Audio started!");
@@ -198,7 +191,6 @@ fn setup_sai(
             output_stream.start(|sai1_rb| {
                 sai.enable_dma(SaiChannel::ChannelA);
 
-                // wait until sai1's fifo starts to receive data
                 info!("Sai1 fifo waiting to receive data.");
                 while sai1_rb.cha.sr.read().flvl().is_empty() {}
                 info!("Audio started!");
